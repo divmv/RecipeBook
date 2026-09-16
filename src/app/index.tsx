@@ -58,7 +58,7 @@ export default function HomeScreen() {
       <View style={styles.headerContainer}>
         <View>
           <Text style={styles.headerTitle}>My Recipe Book 📖</Text>
-          <Text style={styles.headerSubtitle}>What are we cooking today?</Text>
+          <Text style={styles.headerSubtitle}>What's cookin good lookin?</Text>
         </View>
         <TouchableOpacity style={styles.addButton} onPress={() => setModalVisible(true)}>
           <Text style={styles.addButtonText}>+ Add</Text>
