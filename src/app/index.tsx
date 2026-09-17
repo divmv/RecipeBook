@@ -33,10 +33,10 @@ export default function HomeScreen() {
   const [instructionsText, setInstructionsText] = useState('');
 
   const userTags = Array.from(new Set(recipes.flatMap((r) => r.tags || []))).sort();
-  const tagOptions = ['All', '❤️ Favorites', ...userTags];
+  const tagOptions = ['All', 'Favorites', ...userTags];
 
   const filteredRecipes = recipes.filter((r) => {
-    if (selectedTag === '❤️ Favorites') return r.isFavorite;
+    if (selectedTag === 'Favorites') return r.isFavorite;
     if (selectedTag !== 'All') return r.tags?.includes(selectedTag);
     return true;
   });

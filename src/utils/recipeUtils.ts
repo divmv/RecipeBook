@@ -1,51 +1,78 @@
 import * as Print from 'expo-print';
 import * as Sharing from 'expo-sharing';
-import { Recipe } from '../types/recipe';
+import { Platform } from 'react-native';
+import { Recipe } from '../context/RecipeContext';
 
-const renderFormattedList = (items: string[], isOrdered: boolean = false) => {
-  const tag = isOrdered ? 'ol' : 'ul';
-  const htmlItems = items.map((item) => {
-    const trimmed = item.trim();
-    if (trimmed.endsWith(':')) {
-      return `<li style="list-style: none; font-weight: 700; font-size: 16px; margin-top: 14px; margin-left: -20px; color: #0f172a;">${trimmed}</li>`;
-    }
-    return `<li>${trimmed}</li>`;
-  }).join('');
-
-  return `<${tag}>${htmlItems}</${tag}>`;
-};
-
-// Export recipe to PDF with subheading support
 export const exportRecipePDF = async (recipe: Recipe) => {
+  // Format ingredients (support trailing colon subheadings)
+  const ingredientsHtml = recipe.ingredients
+    .map((item) =>
+      item.trim().endsWith(':')
+        ? `<h4 style="margin-top: 14px; margin-bottom: 4px; color: #0F172A; list-style-type: none; font-size: 16px;">${item}</h4>`
+        : `<li style="margin-bottom: 6px; font-size: 14px; color: #334155;">${item}</li>`
+    )
+    .join('');
+
+  // Format instructions (support trailing colon subheadings)
+  const instructionsHtml = recipe.instructions
+    .map((step) =>
+      step.trim().endsWith(':')
+        ? `<h4 style="margin-top: 14px; margin-bottom: 4px; color: #0F172A; list-style-type: none; font-size: 16px;">${step}</h4>`
+        : `<li style="margin-bottom: 8px; font-size: 14px; color: #334155;">${step}</li>`
+    )
+    .join('');
+
   const htmlContent = `
     <!DOCTYPE html>
     <html>
       <head>
-        <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+        <meta charset="utf-8" />
+        <title>${recipe.title}</title>
         <style>
-          body { font-family: -apple-system, sans-serif; padding: 24px; color: #0f172a; }
-          h1 { margin-bottom: 4px; color: #0f172a; }
-          .meta { font-size: 14px; color: #64748b; margin-bottom: 20px; }
-          img { width: 100%; max-height: 280px; object-fit: cover; border-radius: 12px; margin-bottom: 20px; }
-          h2 { border-bottom: 2px solid #e2e8f0; padding-bottom: 6px; color: #007aff; margin-top: 24px; }
-          ul, ol { padding-left: 20px; line-height: 1.6; }
-          li { margin-bottom: 6px; }
+          body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            padding: 30px;
+            color: #0F172A;
+            max-width: 800px;
+            margin: 0 auto;
+          }
+          h1 { font-size: 28px; margin-bottom: 6px; color: #0F172A; }
+          .meta { font-size: 14px; color: #64748B; margin-bottom: 20px; font-weight: 600; }
+          .hero-img { width: 100%; max-height: 300px; object-fit: cover; border-radius: 12px; margin-bottom: 20px; }
+          h2 { font-size: 20px; border-bottom: 2px solid #E2E8F0; padding-bottom: 6px; margin-top: 24px; color: #0F172A; }
+          ul, ol { padding-left: 20px; line-height: 1.5; }
         </style>
       </head>
       <body>
         <h1>${recipe.title}</h1>
-        <div class="meta">
-          ⏱️ ${recipe.time} | 🍳 ${recipe.difficulty}
-        </div>
-        ${recipe.image ? `<img src="${recipe.image}" />` : ''}
+        <div class="meta">⏱️ Time: ${recipe.time} | 🍳 Difficulty: ${recipe.difficulty}</div>
+        
+        ${recipe.image ? `<img src="${recipe.image}" class="hero-img" />` : ''}
+
         <h2>Ingredients</h2>
-        ${renderFormattedList(recipe.ingredients, false)}
+        <ul>${ingredientsHtml}</ul>
+
         <h2>Instructions</h2>
-        ${renderFormattedList(recipe.instructions, true)}
+        <ol>${instructionsHtml}</ol>
       </body>
     </html>
   `;
 
-  const { uri } = await Print.printToFileAsync({ html: htmlContent });
-  await Sharing.shareAsync(uri);
+  try {
+    if (Platform.OS === 'web') {
+      // Direct browser print preview on Vercel
+      await Print.printAsync({ html: htmlContent });
+    } else {
+      // Native iOS / Android file generation & share dialog
+      const { uri } = await Print.printToFileAsync({ html: htmlContent });
+      if (await Sharing.isAvailableAsync()) {
+        await Sharing.shareAsync(uri);
+      } else {
+        await Print.printAsync({ uri });
+      }
+    }
+  } catch (error) {
+    console.error('Failed to export PDF:', error);
+    alert('Could not generate PDF. Please check browser print permissions.');
+  }
 };
