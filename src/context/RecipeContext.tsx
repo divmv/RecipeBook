@@ -46,6 +46,7 @@ type RecipeContextType = {
   recipes: Recipe[];
   addRecipe: (recipe: Omit<Recipe, 'id'>) => void;
   updateRecipe: (updatedRecipe: Recipe) => void;
+  deleteRecipe: (id: string) => void;
 };
 
 const RecipeContext = createContext<RecipeContextType | undefined>(undefined);
@@ -53,7 +54,6 @@ const RecipeContext = createContext<RecipeContextType | undefined>(undefined);
 export function RecipeProvider({ children }: { children: React.ReactNode }) {
   const [recipes, setRecipes] = useState<Recipe[]>(INITIAL_RECIPES);
 
-  // Load saved recipes on app launch
   useEffect(() => {
     const loadStoredRecipes = async () => {
       try {
@@ -68,7 +68,6 @@ export function RecipeProvider({ children }: { children: React.ReactNode }) {
     loadStoredRecipes();
   }, []);
 
-  // Save state changes to local phone storage
   const persistRecipes = async (updatedList: Recipe[]) => {
     try {
       await AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(updatedList));
@@ -94,8 +93,16 @@ export function RecipeProvider({ children }: { children: React.ReactNode }) {
     });
   };
 
+  const deleteRecipe = (id: string) => {
+    setRecipes((prev) => {
+      const updated = prev.filter((r) => r.id !== id);
+      persistRecipes(updated);
+      return updated;
+    });
+  };
+
   return (
-    <RecipeContext.Provider value={{ recipes, addRecipe, updateRecipe }}>
+    <RecipeContext.Provider value={{ recipes, addRecipe, updateRecipe, deleteRecipe }}>
       {children}
     </RecipeContext.Provider>
   );

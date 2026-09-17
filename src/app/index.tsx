@@ -1,3 +1,4 @@
+import * as ImagePicker from 'expo-image-picker';
 import { router } from 'expo-router';
 import { useState } from 'react';
 import {
@@ -25,6 +26,26 @@ export default function HomeScreen() {
   const [image, setImage] = useState('');
   const [ingredients, setIngredients] = useState('');
   const [instructions, setInstructions] = useState('');
+
+  // Choose photo from iPhone Photos App
+  const pickImage = async () => {
+    const result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ImagePicker.MediaTypeOptions.Images,
+      allowsEditing: true,
+      aspect: [4, 3],
+      quality: 0.3, // Compressed to preserve local storage space
+      base64: true,
+    });
+
+    if (!result.canceled && result.assets[0]) {
+      const asset = result.assets[0];
+      if (asset.base64) {
+        setImage(`data:image/jpeg;base64,${asset.base64}`);
+      } else {
+        setImage(asset.uri);
+      }
+    }
+  };
 
   const handleSave = () => {
     if (!title.trim()) return;
@@ -58,7 +79,7 @@ export default function HomeScreen() {
       <View style={styles.headerContainer}>
         <View>
           <Text style={styles.headerTitle}>My Recipe Book 📖</Text>
-          <Text style={styles.headerSubtitle}>What's cookin good lookin?</Text>
+          <Text style={styles.headerSubtitle}>What's cooking good lookin?</Text>
         </View>
         <TouchableOpacity style={styles.addButton} onPress={() => setModalVisible(true)}>
           <Text style={styles.addButtonText}>+ Add</Text>
@@ -99,7 +120,6 @@ export default function HomeScreen() {
           <ScrollView contentContainerStyle={styles.modalContent} showsVerticalScrollIndicator={false}>
             <Text style={styles.modalTitle}>New Recipe</Text>
 
-            {/* Input Field: Title */}
             <Text style={styles.fieldLabel}>Recipe Title *</Text>
             <TextInput
               style={styles.input}
@@ -109,7 +129,6 @@ export default function HomeScreen() {
               onChangeText={setTitle}
             />
 
-            {/* Input Fields: Time & Difficulty */}
             <View style={{ flexDirection: 'row', gap: 10 }}>
               <View style={{ flex: 1 }}>
                 <Text style={styles.fieldLabel}>Cooking Time</Text>
@@ -134,39 +153,38 @@ export default function HomeScreen() {
               </View>
             </View>
 
-            {/* Input Field: Image URL */}
-            <Text style={styles.fieldLabel}>Image URL (Optional)</Text>
-            <TextInput
-              style={styles.input}
-              placeholder="https://..."
-              placeholderTextColor="#999"
-              value={image}
-              onChangeText={setImage}
-            />
+            {/* Photo Picker Button */}
+            <Text style={styles.fieldLabel}>Recipe Photo</Text>
+            <TouchableOpacity style={styles.photoBtn} onPress={pickImage}>
+              <Text style={styles.photoBtnText}>
+                {image ? '✓ Photo Selected (Tap to Change)' : '📷 Choose from Photos'}
+              </Text>
+            </TouchableOpacity>
 
-            {/* Input Field: Ingredients */}
+            {image ? (
+              <Image source={{ uri: image }} style={styles.previewImage} />
+            ) : null}
+
             <Text style={styles.fieldLabel}>Ingredients (Use ":" for section headers)</Text>
             <TextInput
               style={[styles.input, styles.multiline]}
               multiline
-              placeholder={`Salt\nGhee\n\nFor gravy:\n3 Tomatoes\n1 cup Yogurt`}
+              placeholder={`Salt\nGhee\n\nFor gravy:\n3 Tomatoes`}
               placeholderTextColor="#999"
               value={ingredients}
               onChangeText={setIngredients}
             />
 
-            {/* Input Field: Instructions */}
             <Text style={styles.fieldLabel}>Instructions (One step per line)</Text>
             <TextInput
               style={[styles.input, styles.multiline]}
               multiline
-              placeholder={`1. Boil rice with spices.\n2. Sauté onions until golden.\n3. Layer gravy and rice.`}
+              placeholder={`1. Boil rice with spices.\n2. Layer gravy and rice.`}
               placeholderTextColor="#999"
               value={instructions}
               onChangeText={setInstructions}
             />
 
-            {/* Form Buttons */}
             <View style={styles.modalButtons}>
               <TouchableOpacity style={[styles.btn, styles.cancelBtn]} onPress={() => setModalVisible(false)}>
                 <Text style={styles.btnText}>Cancel</Text>
@@ -201,6 +219,9 @@ const styles = StyleSheet.create({
   fieldLabel: { fontSize: 14, fontWeight: '600', color: '#444', marginTop: 12, marginBottom: 6 },
   input: { backgroundColor: '#F0F2F5', padding: 14, borderRadius: 10, fontSize: 15, color: '#1A1A1A' },
   multiline: { height: 120, textAlignVertical: 'top' },
+  photoBtn: { backgroundColor: '#EBF5FF', padding: 14, borderRadius: 10, alignItems: 'center', borderStyle: 'dashed', borderWidth: 1, borderColor: '#007AFF' },
+  photoBtnText: { color: '#007AFF', fontWeight: '600', fontSize: 15 },
+  previewImage: { width: '100%', height: 140, borderRadius: 10, marginTop: 10 },
   modalButtons: { flexDirection: 'row', gap: 12, marginTop: 24, marginBottom: 30 },
   btn: { flex: 1, padding: 16, borderRadius: 10, alignItems: 'center' },
   cancelBtn: { backgroundColor: '#E5E7EB' },
