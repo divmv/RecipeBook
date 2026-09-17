@@ -15,61 +15,82 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRecipes } from '../context/RecipeContext';
+import { exportRecipePDF } from '../utils/recipeUtils';
 
 export default function RecipeDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
-  const { recipes, updateRecipe, deleteRecipe } = useRecipes();
+  const { recipes, updateRecipe, deleteRecipe, toggleFavorite } = useRecipes();
 
   const recipe = recipes.find((r) => r.id === id);
 
   const [isEditing, setIsEditing] = useState(false);
-  const [title, setTitle] = useState(recipe?.title || '');
-  const [time, setTime] = useState(recipe?.time || '');
-  const [difficulty, setDifficulty] = useState(recipe?.difficulty || '');
-  const [image, setImage] = useState(recipe?.image || '');
-  const [ingredients, setIngredients] = useState(recipe?.ingredients?.join('\n') || '');
-  const [instructions, setInstructions] = useState(recipe?.instructions?.join('\n') || '');
+  const [title, setTitle] = useState('');
+  const [time, setTime] = useState('');
+  const [difficulty, setDifficulty] = useState('');
+  const [tagsStr, setTagsStr] = useState('');
+  const [image, setImage] = useState('');
+  const [ingredientsText, setIngredientsText] = useState('');
+  const [instructionsText, setInstructionsText] = useState('');
 
-  const [activeInput, setActiveInput] = useState<'ingredients' | 'instructions' | null>(null);
-  const [selection, setSelection] = useState({ start: 0, end: 0 });
+  // Interactive Checklist states
+  const [checkedIngredients, setCheckedIngredients] = useState<Record<number, boolean>>({});
+  const [checkedInstructions, setCheckedInstructions] = useState<Record<number, boolean>>({});
 
-  // Keep state updated whenever recipe data updates
   useEffect(() => {
     if (recipe) {
       setTitle(recipe.title || '');
       setTime(recipe.time || '');
       setDifficulty(recipe.difficulty || '');
+      setTagsStr(recipe.tags ? recipe.tags.join(', ') : '');
       setImage(recipe.image || '');
-      setIngredients(recipe.ingredients ? recipe.ingredients.join('\n') : '');
-      setInstructions(recipe.instructions ? recipe.instructions.join('\n') : '');
+      setIngredientsText(recipe.ingredients ? recipe.ingredients.join('\n') : '');
+      setInstructionsText(recipe.instructions ? recipe.instructions.join('\n') : '');
     }
-  }, [recipe?.id, recipe?.title, recipe?.image, recipe?.time, recipe?.difficulty]);
+  }, [recipe?.id, recipe?.title, recipe?.image]);
 
   if (!recipe) {
     return (
-      <SafeAreaView style={styles.container}>
-        <View style={styles.content}>
-          <TouchableOpacity onPress={() => router.back()}>
-            <Text style={styles.navText}>‹ Back to Home</Text>
-          </TouchableOpacity>
-          <Text style={{ marginTop: 20, fontSize: 16, color: '#666' }}>
-            Recipe not found or has been deleted.
-          </Text>
-        </View>
+      <SafeAreaView style={styles.container} edges={['top', 'left', 'right']}>
+        <TouchableOpacity style={{ padding: 16 }} onPress={() => router.back()}>
+          <Text style={styles.navText}>‹ Back</Text>
+        </TouchableOpacity>
       </SafeAreaView>
     );
   }
 
+  const convertUriToBase64 = async (uri: string): Promise<string> => {
+    if (uri.startsWith('data:') || uri.startsWith('http')) return uri;
+    try {
+      const response = await fetch(uri);
+      const blob = await response.blob();
+      return new Promise((resolve) => {
+        const reader = new FileReader();
+        reader.onloadend = () => resolve(reader.result as string);
+        reader.onerror = () => resolve(uri);
+        reader.readAsDataURL(blob);
+      });
+    } catch {
+      return uri;
+    }
+  };
+
   const pickImage = async () => {
     const result = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: ImagePicker.MediaTypeOptions.Images,
+      mediaTypes: ['images'],
       allowsEditing: true,
       aspect: [4, 3],
-      quality: 0.6,
+      quality: 0.2,
+      base64: true,
     });
 
     if (!result.canceled && result.assets[0]) {
-      setImage(result.assets[0].uri);
+      const asset = result.assets[0];
+      if (asset.base64) {
+        setImage(`data:image/jpeg;base64,${asset.base64}`);
+      } else {
+        const persistentDataUrl = await convertUriToBase64(asset.uri);
+        setImage(persistentDataUrl);
+      }
     }
   };
 
@@ -79,9 +100,10 @@ export default function RecipeDetailScreen() {
       title: title.trim() || recipe.title,
       time: time.trim() || recipe.time,
       difficulty: difficulty.trim() || recipe.difficulty,
+      tags: tagsStr.split(',').map((t) => t.trim()).filter(Boolean),
       image: image.trim() || recipe.image,
-      ingredients: ingredients.split('\n').filter((l) => l.trim() !== ''),
-      instructions: instructions.split('\n').filter((l) => l.trim() !== ''),
+      ingredients: ingredientsText.split('\n').filter((l) => l.trim() !== ''),
+      instructions: instructionsText.split('\n').filter((l) => l.trim() !== ''),
     });
     setIsEditing(false);
   };
@@ -97,108 +119,36 @@ export default function RecipeDetailScreen() {
         confirmAndExecute();
       }
     } else {
-      Alert.alert(
-        'Delete Recipe',
-        'Are you sure you want to delete this recipe?',
-        [
-          { text: 'Cancel', style: 'cancel' },
-          { text: 'Delete', style: 'destructive', onPress: confirmAndExecute },
-        ]
-      );
+      Alert.alert('Delete Recipe', 'Are you sure you want to delete this recipe?', [
+        { text: 'Cancel', style: 'cancel' },
+        { text: 'Delete', style: 'destructive', onPress: confirmAndExecute },
+      ]);
     }
-  };
-
-  const applyFormatting = (type: 'bold' | 'italic' | 'bullet' | 'subbullet' | 'header') => {
-    if (!activeInput) return;
-
-    const currentText = activeInput === 'ingredients' ? ingredients : instructions;
-    const { start, end } = selection;
-
-    const before = currentText.substring(0, start);
-    const selected = currentText.substring(start, end);
-    const after = currentText.substring(end);
-
-    let inserted = '';
-
-    switch (type) {
-      case 'bold':
-        inserted = selected ? `**${selected}**` : '**bold**';
-        break;
-      case 'italic':
-        inserted = selected ? `*${selected}*` : '*italic*';
-        break;
-      case 'bullet':
-        inserted = selected ? `• ${selected}` : '• ';
-        break;
-      case 'subbullet':
-        inserted = selected ? `- ${selected}` : '- ';
-        break;
-      case 'header':
-        inserted = selected ? `${selected}:` : 'Header:';
-        break;
-    }
-
-    const newText = before + inserted + after;
-    if (activeInput === 'ingredients') {
-      setIngredients(newText);
-    } else {
-      setInstructions(newText);
-    }
-  };
-
-  const renderInlineFormattedText = (text: string) => {
-    const parts = text.split(/(\*\*.*?\*\*|\*.*?\*)/g);
-    return parts.map((part, i) => {
-      if (part.startsWith('**') && part.endsWith('**')) {
-        return (
-          <Text key={i} style={{ fontWeight: 'bold' }}>
-            {part.slice(2, -2)}
-          </Text>
-        );
-      }
-      if (part.startsWith('*') && part.endsWith('*')) {
-        return (
-          <Text key={i} style={{ fontStyle: 'italic' }}>
-            {part.slice(1, -1)}
-          </Text>
-        );
-      }
-      return part;
-    });
-  };
-
-  const renderFormattedLine = (line: string, index: number) => {
-    const trimmed = line.trim();
-    const isHeader = trimmed.endsWith(':');
-    const isSubBullet = trimmed.startsWith('-') || trimmed.startsWith('>');
-    const cleanText = trimmed.replace(/^[->•]\s*/, '');
-
-    if (isHeader) {
-      return (
-        <Text key={index} style={styles.sectionSubHeader}>
-          {line}
-        </Text>
-      );
-    }
-
-    return (
-      <View key={index} style={[styles.bulletRow, isSubBullet && styles.subBulletRow]}>
-        <Text style={isSubBullet ? styles.subBulletSymbol : styles.bulletSymbol}>
-          {isSubBullet ? '◦' : '•'}
-        </Text>
-        <Text style={styles.bulletText}>{renderInlineFormattedText(cleanText)}</Text>
-      </View>
-    );
   };
 
   return (
-    <SafeAreaView style={styles.container}>
-      {/* Sticky Top Navigation Bar */}
+    <SafeAreaView style={styles.container} edges={['top', 'left', 'right']}>
+      {/* Top Bar with Clear Padding and Touch Targets */}
       <View style={styles.navBar}>
-        <TouchableOpacity onPress={() => router.back()}>
-          <Text style={styles.navText}>‹ Back</Text>
-        </TouchableOpacity>
-        <TouchableOpacity onPress={() => setIsEditing(!isEditing)}>
+        {!isEditing ? (
+          <TouchableOpacity
+            onPress={() => router.back()}
+            hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
+          >
+            <Text style={styles.navText}>‹ Back</Text>
+          </TouchableOpacity>
+        ) : (
+          <View style={{ width: 45 }} />
+        )}
+
+        <Text style={styles.navTitle} numberOfLines={1} ellipsizeMode="tail">
+          {isEditing ? 'Editing Recipe' : recipe.title}
+        </Text>
+
+        <TouchableOpacity
+          onPress={() => setIsEditing(!isEditing)}
+          hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
+        >
           <Text style={styles.navText}>{isEditing ? 'Cancel' : 'Edit'}</Text>
         </TouchableOpacity>
       </View>
@@ -206,18 +156,10 @@ export default function RecipeDetailScreen() {
       <KeyboardAvoidingView
         behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
         style={{ flex: 1 }}
-        keyboardVerticalOffset={Platform.OS === 'ios' ? 10 : 0}
       >
-        <ScrollView
-          contentContainerStyle={styles.content}
-          showsVerticalScrollIndicator={false}
-          keyboardShouldPersistTaps="handled"
-        >
+        <ScrollView contentContainerStyle={styles.content}>
           {isEditing ? (
-            /* EDIT MODE */
-            <View style={styles.editCard}>
-              <Text style={styles.editSectionHeader}>Edit Recipe</Text>
-
+            <View style={styles.card}>
               <Text style={styles.label}>Title</Text>
               <TextInput style={styles.input} value={title} onChangeText={setTitle} />
 
@@ -234,51 +176,27 @@ export default function RecipeDetailScreen() {
 
               <Text style={styles.label}>Recipe Photo</Text>
               <TouchableOpacity style={styles.photoBtn} onPress={pickImage}>
-                <Text style={styles.photoBtnText}>📷 Change Photo</Text>
+                <Text style={styles.photoBtnText}>📷 Select Photo</Text>
               </TouchableOpacity>
-
               {image ? <Image source={{ uri: image }} style={styles.previewImage} /> : null}
 
-              {/* Formatting Toolbar */}
-              <View style={styles.toolbarContainer}>
-                <Text style={styles.toolbarTitle}>Formatting Tools</Text>
-                <View style={styles.toolbarRow}>
-                  <TouchableOpacity style={styles.toolBtn} onPress={() => applyFormatting('bold')}>
-                    <Text style={[styles.toolBtnText, { fontWeight: 'bold' }]}>B</Text>
-                  </TouchableOpacity>
-                  <TouchableOpacity style={styles.toolBtn} onPress={() => applyFormatting('italic')}>
-                    <Text style={[styles.toolBtnText, { fontStyle: 'italic' }]}>I</Text>
-                  </TouchableOpacity>
-                  <TouchableOpacity style={styles.toolBtn} onPress={() => applyFormatting('header')}>
-                    <Text style={styles.toolBtnText}>Header:</Text>
-                  </TouchableOpacity>
-                  <TouchableOpacity style={styles.toolBtn} onPress={() => applyFormatting('bullet')}>
-                    <Text style={styles.toolBtnText}>• Bullet</Text>
-                  </TouchableOpacity>
-                  <TouchableOpacity style={styles.toolBtn} onPress={() => applyFormatting('subbullet')}>
-                    <Text style={styles.toolBtnText}>◦ Sub</Text>
-                  </TouchableOpacity>
-                </View>
-              </View>
+              <Text style={styles.label}>Tags (comma separated)</Text>
+              <TextInput style={styles.input} value={tagsStr} onChangeText={setTagsStr} />
 
-              <Text style={styles.label}>Ingredients</Text>
+              <Text style={styles.label}>Ingredients (use "Header:" for sections)</Text>
               <TextInput
                 style={[styles.input, styles.multiline]}
                 multiline
-                value={ingredients}
-                onChangeText={setIngredients}
-                onFocus={() => setActiveInput('ingredients')}
-                onSelectionChange={(e) => setSelection(e.nativeEvent.selection)}
+                value={ingredientsText}
+                onChangeText={setIngredientsText}
               />
 
-              <Text style={styles.label}>Instructions</Text>
+              <Text style={styles.label}>Instructions (use "Header:" for sections)</Text>
               <TextInput
                 style={[styles.input, styles.multiline]}
                 multiline
-                value={instructions}
-                onChangeText={setInstructions}
-                onFocus={() => setActiveInput('instructions')}
-                onSelectionChange={(e) => setSelection(e.nativeEvent.selection)}
+                value={instructionsText}
+                onChangeText={setInstructionsText}
               />
 
               <TouchableOpacity style={styles.saveBtn} onPress={handleSave}>
@@ -290,32 +208,91 @@ export default function RecipeDetailScreen() {
               </TouchableOpacity>
             </View>
           ) : (
-            /* VIEW MODE */
             <View>
-              <View style={styles.headerCard}>
+              {/* Recipe Hero Card */}
+              <View style={styles.card}>
                 <Image source={{ uri: recipe.image }} style={styles.heroImage} />
-                <Text style={styles.title}>{recipe.title}</Text>
+                <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <Text style={styles.mainTitle}>{recipe.title}</Text>
+                  
+                  <TouchableOpacity
+                    onPress={() => toggleFavorite(recipe.id)}
+                    hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                  >
+                    <Text style={{ fontSize: 24 }}>{recipe.isFavorite ? '❤️' : '🤍'}</Text>
+                  </TouchableOpacity>
+                </View>
 
                 <View style={styles.metaRow}>
-                  <View style={styles.metaBadge}>
-                    <Text style={styles.metaBadgeText}>⏱️ {recipe.time}</Text>
-                  </View>
-                  <View style={styles.metaBadge}>
-                    <Text style={styles.metaBadgeText}>🍳 {recipe.difficulty}</Text>
-                  </View>
+                  <Text style={styles.metaText}>⏱️ {recipe.time}</Text>
+                  <Text style={styles.metaText}>🍳 {recipe.difficulty}</Text>
                 </View>
+
+                <TouchableOpacity style={styles.pdfBtn} onPress={() => exportRecipePDF(recipe)}>
+                  <Text style={styles.pdfBtnText}>📄 Export PDF / Print Card</Text>
+                </TouchableOpacity>
               </View>
 
-              <View style={styles.sectionCard}>
+              {/* Ingredients Section */}
+              <View style={styles.card}>
                 <Text style={styles.sectionHeader}>Ingredients</Text>
-                <View style={styles.divider} />
-                {recipe.ingredients.map((item, index) => renderFormattedLine(item, index))}
+                {recipe.ingredients.map((item, index) => {
+                  const isSubheader = item.trim().endsWith(':');
+                  if (isSubheader) {
+                    return (
+                      <Text key={index} style={styles.subheading}>
+                        {item}
+                      </Text>
+                    );
+                  }
+
+                  const isChecked = checkedIngredients[index];
+                  return (
+                    <TouchableOpacity
+                      key={index}
+                      style={styles.checkRow}
+                      onPress={() => setCheckedIngredients((p) => ({ ...p, [index]: !p[index] }))}
+                    >
+                      <View style={[styles.checkbox, isChecked && styles.checkboxChecked]}>
+                        {isChecked && <Text style={styles.checkmark}>✓</Text>}
+                      </View>
+                      <Text style={[styles.checkText, isChecked && styles.strikeText]}>
+                        {item}
+                      </Text>
+                    </TouchableOpacity>
+                  );
+                })}
               </View>
 
-              <View style={styles.sectionCard}>
+              {/* Instructions Section */}
+              <View style={styles.card}>
                 <Text style={styles.sectionHeader}>Instructions</Text>
-                <View style={styles.divider} />
-                {recipe.instructions.map((step, index) => renderFormattedLine(step, index))}
+                {recipe.instructions.map((step, index) => {
+                  const isSubheader = step.trim().endsWith(':');
+                  if (isSubheader) {
+                    return (
+                      <Text key={index} style={styles.subheading}>
+                        {step}
+                      </Text>
+                    );
+                  }
+
+                  const isChecked = checkedInstructions[index];
+                  return (
+                    <TouchableOpacity
+                      key={index}
+                      style={styles.checkRow}
+                      onPress={() => setCheckedInstructions((p) => ({ ...p, [index]: !p[index] }))}
+                    >
+                      <View style={[styles.checkbox, isChecked && styles.checkboxChecked]}>
+                        {isChecked && <Text style={styles.checkmark}>✓</Text>}
+                      </View>
+                      <Text style={[styles.checkText, isChecked && styles.strikeText]}>
+                        {step}
+                      </Text>
+                    </TouchableOpacity>
+                  );
+                })}
               </View>
             </View>
           )}
@@ -327,71 +304,70 @@ export default function RecipeDetailScreen() {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#F8FAFC' },
-
   navBar: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
     paddingHorizontal: 16,
-    paddingVertical: 12,
-    backgroundColor: '#F8FAFC',
+    paddingTop: 14,
+    paddingBottom: 14,
     borderBottomWidth: 1,
-    borderBottomColor: '#E2E8F0',
-    zIndex: 10,
+    borderColor: '#E2E8F0',
+    backgroundColor: '#FFF',
+    minHeight: 56,
   },
   navText: { color: '#007AFF', fontSize: 16, fontWeight: '600' },
+  navTitle: { flex: 1, fontSize: 16, fontWeight: '700', color: '#0F172A', textAlign: 'center', marginHorizontal: 8 },
 
-  content: { padding: 16, paddingBottom: 160 },
-
-  headerCard: {
-    backgroundColor: '#FFF',
-    borderRadius: 16,
-    padding: 12,
-    marginBottom: 16,
-    borderWidth: 1,
-    borderColor: '#E2E8F0',
-  },
+  content: { padding: 16 },
+  card: { backgroundColor: '#FFF', borderRadius: 16, padding: 16, marginBottom: 16, borderWidth: 1, borderColor: '#E2E8F0' },
   heroImage: { width: '100%', height: 200, borderRadius: 12, marginBottom: 12 },
-  title: { fontSize: 24, fontWeight: 'bold', color: '#0F172A', paddingHorizontal: 4 },
-  metaRow: { flexDirection: 'row', gap: 8, marginTop: 8, paddingHorizontal: 4 },
-  metaBadge: { backgroundColor: '#F1F5F9', paddingHorizontal: 10, paddingVertical: 6, borderRadius: 8 },
-  metaBadgeText: { fontSize: 13, fontWeight: '600', color: '#475569' },
+  mainTitle: { fontSize: 22, fontWeight: '800', color: '#0F172A', flex: 1 },
 
-  sectionCard: {
-    backgroundColor: '#FFF',
-    borderRadius: 16,
-    padding: 16,
-    marginBottom: 16,
+  metaRow: { flexDirection: 'row', gap: 12, marginTop: 8 },
+  metaText: { fontSize: 13, color: '#64748B', fontWeight: '600' },
+
+  pdfBtn: { backgroundColor: '#F1F5F9', padding: 10, borderRadius: 8, marginTop: 12, alignItems: 'center' },
+  pdfBtnText: { color: '#0F172A', fontWeight: '600', fontSize: 13 },
+
+  sectionHeader: { fontSize: 18, fontWeight: '700', color: '#0F172A', marginBottom: 8 },
+  subheading: { fontSize: 15, fontWeight: '700', color: '#0F172A', marginTop: 14, marginBottom: 6 },
+
+  checkRow: { flexDirection: 'row', alignItems: 'flex-start', marginVertical: 6 },
+  checkbox: {
+    width: 18,
+    height: 18,
+    borderRadius: 4,
     borderWidth: 1,
-    borderColor: '#E2E8F0',
+    borderColor: '#CBD5E1',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 10,
+    marginTop: 2,
   },
-  sectionHeader: { fontSize: 18, fontWeight: 'bold', color: '#0F172A' },
-  divider: { height: 1, backgroundColor: '#E2E8F0', marginVertical: 12 },
+  checkboxChecked: {
+    backgroundColor: '#007AFF',
+    borderColor: '#007AFF',
+  },
+  checkmark: {
+    color: '#FFF',
+    fontSize: 11,
+    fontWeight: 'bold',
+  },
 
-  sectionSubHeader: { fontSize: 16, fontWeight: 'bold', color: '#007AFF', marginTop: 12, marginBottom: 6 },
-  bulletRow: { flexDirection: 'row', alignItems: 'flex-start', marginVertical: 4, paddingLeft: 4 },
-  subBulletRow: { paddingLeft: 24 },
-  bulletSymbol: { fontSize: 16, color: '#007AFF', marginRight: 8, lineHeight: 22 },
-  subBulletSymbol: { fontSize: 14, color: '#64748B', marginRight: 8, lineHeight: 22 },
-  bulletText: { flex: 1, fontSize: 15, color: '#334155', lineHeight: 22 },
+  checkText: { fontSize: 15, color: '#334155', flex: 1, lineHeight: 22 },
+  strikeText: { textDecorationLine: 'line-through', color: '#94A3B8' },
 
-  editCard: { backgroundColor: '#FFF', borderRadius: 16, padding: 16, borderWidth: 1, borderColor: '#E2E8F0' },
-  editSectionHeader: { fontSize: 20, fontWeight: 'bold', color: '#0F172A', marginBottom: 10 },
-  label: { fontSize: 14, fontWeight: '600', color: '#475569', marginTop: 12, marginBottom: 6 },
-  input: { backgroundColor: '#F1F5F9', padding: 14, borderRadius: 10, fontSize: 15, color: '#0F172A' },
-  multiline: { height: 140, textAlignVertical: 'top' },
-  photoBtn: { backgroundColor: '#EBF5FF', padding: 14, borderRadius: 10, alignItems: 'center', borderStyle: 'dashed', borderWidth: 1, borderColor: '#007AFF' },
-  photoBtnText: { color: '#007AFF', fontWeight: '600', fontSize: 15 },
-  previewImage: { width: '100%', height: 140, borderRadius: 10, marginTop: 10 },
+  label: { fontSize: 13, fontWeight: '600', color: '#475569', marginTop: 10, marginBottom: 4 },
+  input: { backgroundColor: '#F1F5F9', padding: 12, borderRadius: 8, fontSize: 15, color: '#0F172A' },
+  multiline: { height: 120, textAlignVertical: 'top' },
 
-  toolbarContainer: { backgroundColor: '#F1F5F9', borderRadius: 10, padding: 10, marginTop: 16 },
-  toolbarTitle: { fontSize: 12, fontWeight: '700', color: '#64748B', marginBottom: 6, textTransform: 'uppercase' },
-  toolbarRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 6 },
-  toolBtn: { backgroundColor: '#FFF', paddingHorizontal: 12, paddingVertical: 8, borderRadius: 6, borderWidth: 1, borderColor: '#CBD5E1' },
-  toolBtnText: { fontSize: 13, color: '#0F172A' },
+  photoBtn: { backgroundColor: '#EBF5FF', padding: 12, borderRadius: 8, alignItems: 'center', borderStyle: 'dashed', borderWidth: 1, borderColor: '#007AFF', marginVertical: 4 },
+  photoBtnText: { color: '#007AFF', fontWeight: '600', fontSize: 14 },
+  previewImage: { width: '100%', height: 120, borderRadius: 8, marginTop: 8 },
 
-  saveBtn: { backgroundColor: '#007AFF', padding: 16, borderRadius: 10, alignItems: 'center', marginTop: 24 },
-  saveBtnText: { color: '#FFF', fontWeight: '600', fontSize: 16 },
-  deleteBtn: { backgroundColor: '#FEE2E2', padding: 16, borderRadius: 10, alignItems: 'center', marginTop: 12, marginBottom: 12 },
-  deleteBtnText: { color: '#EF4444', fontWeight: '600', fontSize: 16 },
+  saveBtn: { backgroundColor: '#007AFF', padding: 14, borderRadius: 10, alignItems: 'center', marginTop: 16 },
+  saveBtnText: { color: '#FFF', fontWeight: '700', fontSize: 15 },
+  deleteBtn: { backgroundColor: '#FEE2E2', padding: 14, borderRadius: 10, alignItems: 'center', marginTop: 10 },
+  deleteBtnText: { color: '#EF4444', fontWeight: '700', fontSize: 15 },
 });

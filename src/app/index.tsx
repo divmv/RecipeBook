@@ -4,7 +4,9 @@ import { useState } from 'react';
 import {
   FlatList,
   Image,
+  KeyboardAvoidingView,
   Modal,
+  Platform,
   ScrollView,
   StyleSheet,
   Text,
@@ -12,28 +14,47 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRecipes } from '../context/RecipeContext';
 
 export default function HomeScreen() {
-  const { recipes, addRecipe } = useRecipes();
-  const [modalVisible, setModalVisible] = useState(false);
+  const insets = useSafeAreaInsets();
+  const { recipes, addRecipe, toggleFavorite } = useRecipes();
+  const [search, setSearch] = useState('');
+  const [selectedTag, setSelectedTag] = useState('All');
 
-  // New Recipe Form State
+  // Add Recipe Modal state
+  const [isAddModalOpen, setIsAddModalOpen] = useState(false);
   const [title, setTitle] = useState('');
   const [time, setTime] = useState('');
   const [difficulty, setDifficulty] = useState('');
+  const [tagsStr, setTagsStr] = useState('');
   const [image, setImage] = useState('');
-  const [ingredients, setIngredients] = useState('');
-  const [instructions, setInstructions] = useState('');
+  const [ingredientsText, setIngredientsText] = useState('');
+  const [instructionsText, setInstructionsText] = useState('');
 
-  // Choose photo from iPhone Photos App
+  // Dynamically generate filter tags strictly from user recipes
+  const userTags = Array.from(
+    new Set(recipes.flatMap((r) => r.tags || []))
+  ).sort();
+  const tagOptions = ['All', 'Favorites', ...userTags];
+
+  const filteredRecipes = recipes.filter((r) => {
+    const matchesSearch =
+      r.title.toLowerCase().includes(search.toLowerCase()) ||
+      r.ingredients.some((i) => i.toLowerCase().includes(search.toLowerCase()));
+
+    if (selectedTag === 'Favorites') return matchesSearch && r.isFavorite;
+    if (selectedTag !== 'All') return matchesSearch && r.tags?.includes(selectedTag);
+    return matchesSearch;
+  });
+
   const pickImage = async () => {
     const result = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: ImagePicker.MediaTypeOptions.Images,
+      mediaTypes: ['images'],
       allowsEditing: true,
       aspect: [4, 3],
-      quality: 0.3, // Compressed to preserve local storage space
+      quality: 0.2,
       base64: true,
     });
 
@@ -47,184 +68,284 @@ export default function HomeScreen() {
     }
   };
 
-  const handleSave = () => {
-    if (!title.trim()) return;
+  const handleCreateRecipe = async () => {
+    if (!title.trim()) {
+      alert('Please enter a recipe title.');
+      return;
+    }
 
-    addRecipe({
+    await addRecipe({
       title: title.trim(),
-      time: time.trim() || '20 mins',
+      time: time.trim() || '30 mins',
       difficulty: difficulty.trim() || 'Easy',
-      image: image.trim() || 'https://images.unsplash.com/photo-1495521821757-a1efb6729352?w=600',
-      ingredients: ingredients
-        ? ingredients.split('\n').filter((l) => l.trim() !== '')
-        : ['Sample ingredient'],
-      instructions: instructions
-        ? instructions.split('\n').filter((l) => l.trim() !== '')
-        : ['Sample instruction step'],
+      tags: tagsStr.split(',').map((t) => t.trim()).filter(Boolean),
+      isFavorite: false,
+      image: image.trim() || 'https://images.unsplash.com/photo-1495521821757-a1efb6729352?w=800',
+      ingredients: ingredientsText.split('\n').filter((l) => l.trim() !== ''),
+      instructions: instructionsText.split('\n').filter((l) => l.trim() !== ''),
     });
 
-    // Reset Form & Close Modal
+    // Reset fields
     setTitle('');
     setTime('');
     setDifficulty('');
+    setTagsStr('');
     setImage('');
-    setIngredients('');
-    setInstructions('');
-    setModalVisible(false);
+    setIngredientsText('');
+    setInstructionsText('');
+    setIsAddModalOpen(false);
   };
 
   return (
-    <SafeAreaView style={styles.container}>
-      {/* Header */}
-      <View style={styles.headerContainer}>
-        <View>
-          <Text style={styles.headerTitle}>My Recipe Book 📖</Text>
-          <Text style={styles.headerSubtitle}>What's cooking good lookin?</Text>
-        </View>
-        <TouchableOpacity style={styles.addButton} onPress={() => setModalVisible(true)}>
-          <Text style={styles.addButtonText}>+ Add</Text>
+    <SafeAreaView style={styles.container} edges={['top', 'left', 'right']}>
+      {/* Top Main Bar */}
+      <View style={styles.header}>
+        <Text style={styles.headerTitle}>My Recipes</Text>
+        <TouchableOpacity
+          style={styles.addHeaderBtn}
+          onPress={() => setIsAddModalOpen(true)}
+          hitSlop={{ top: 16, bottom: 16, left: 16, right: 16 }}
+        >
+          <Text style={styles.addHeaderBtnText}>+ New Recipe</Text>
         </TouchableOpacity>
       </View>
 
-      {/* Recipe List */}
+      {/* Search Bar */}
+      <TextInput
+        style={styles.searchInput}
+        placeholder="Search title or ingredients..."
+        placeholderTextColor="#94A3B8"
+        value={search}
+        onChangeText={setSearch}
+      />
+
+      {/* Tag Filters */}
+      <View style={{ height: 44, marginBottom: 8 }}>
+        <FlatList
+          horizontal
+          data={tagOptions}
+          keyExtractor={(item) => item}
+          showsHorizontalScrollIndicator={false}
+          contentContainerStyle={{ paddingHorizontal: 16 }}
+          renderItem={({ item }) => (
+            <TouchableOpacity
+              style={[styles.tagChip, selectedTag === item && styles.activeTagChip]}
+              onPress={() => setSelectedTag(item)}
+            >
+              <Text style={[styles.tagChipText, selectedTag === item && styles.activeTagChipText]}>
+                {item}
+              </Text>
+            </TouchableOpacity>
+          )}
+        />
+      </View>
+
+      {/* Main Recipe List */}
       <FlatList
-        data={recipes}
+        data={filteredRecipes}
         keyExtractor={(item) => item.id}
-        showsVerticalScrollIndicator={false}
-        contentContainerStyle={styles.listContent}
+        contentContainerStyle={{ padding: 16 }}
         renderItem={({ item }) => (
           <TouchableOpacity
             style={styles.card}
-            activeOpacity={0.85}
-            onPress={() =>
-              router.push({
-                pathname: '/recipe' as any,
-                params: { id: item.id },
-              })
-            }
+            onPress={() => router.push({ pathname: '/recipe', params: { id: item.id } })}
           >
             <Image source={{ uri: item.image }} style={styles.cardImage} />
-            <View style={styles.cardDetails}>
+
+            <TouchableOpacity
+              style={styles.favBadge}
+              onPress={() => toggleFavorite(item.id)}
+              hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+            >
+              <Text style={{ fontSize: 18 }}>{item.isFavorite ? '❤️' : '🤍'}</Text>
+            </TouchableOpacity>
+
+            <View style={styles.cardContent}>
               <Text style={styles.cardTitle}>{item.title}</Text>
               <Text style={styles.cardMeta}>
-                ⏱️ {item.time}  •  🍳 {item.difficulty}
+                ⏱️ {item.time} | 🍳 {item.difficulty}
               </Text>
+              {item.tags?.length > 0 && (
+                <View style={styles.tagRow}>
+                  {item.tags.map((t, idx) => (
+                    <View key={idx} style={styles.miniTag}>
+                      <Text style={styles.miniTagText}>{t}</Text>
+                    </View>
+                  ))}
+                </View>
+              )}
             </View>
           </TouchableOpacity>
         )}
       />
 
-      {/* Add Recipe Modal */}
-      <Modal visible={modalVisible} animationType="slide" presentationStyle="pageSheet">
-        <SafeAreaView style={styles.modalContainer}>
-          <ScrollView contentContainerStyle={styles.modalContent} showsVerticalScrollIndicator={false}>
-            <Text style={styles.modalTitle}>New Recipe</Text>
-
-            <Text style={styles.fieldLabel}>Recipe Title *</Text>
-            <TextInput
-              style={styles.input}
-              placeholder="e.g. Chicken Biryani"
-              placeholderTextColor="#999"
-              value={title}
-              onChangeText={setTitle}
-            />
-
-            <View style={{ flexDirection: 'row', gap: 10 }}>
-              <View style={{ flex: 1 }}>
-                <Text style={styles.fieldLabel}>Cooking Time</Text>
-                <TextInput
-                  style={styles.input}
-                  placeholder="e.g. 45 mins"
-                  placeholderTextColor="#999"
-                  value={time}
-                  onChangeText={setTime}
-                />
-              </View>
-
-              <View style={{ flex: 1 }}>
-                <Text style={styles.fieldLabel}>Difficulty</Text>
-                <TextInput
-                  style={styles.input}
-                  placeholder="e.g. Medium"
-                  placeholderTextColor="#999"
-                  value={difficulty}
-                  onChangeText={setDifficulty}
-                />
-              </View>
-            </View>
-
-            {/* Photo Picker Button */}
-            <Text style={styles.fieldLabel}>Recipe Photo</Text>
-            <TouchableOpacity style={styles.photoBtn} onPress={pickImage}>
-              <Text style={styles.photoBtnText}>
-                {image ? '✓ Photo Selected (Tap to Change)' : '📷 Choose from Photos'}
-              </Text>
+      {/* Safe Area Corrected New Recipe Modal */}
+      <Modal visible={isAddModalOpen} animationType="slide" transparent={false}>
+        <View style={[styles.modalWrapper, { paddingTop: Math.max(insets.top, 24) }]}>
+          <View style={styles.modalHeader}>
+            <TouchableOpacity
+              style={styles.modalTouchArea}
+              onPress={() => setIsAddModalOpen(false)}
+              hitSlop={{ top: 20, bottom: 20, left: 20, right: 20 }}
+            >
+              <Text style={styles.modalCancelText}>Cancel</Text>
             </TouchableOpacity>
 
-            {image ? (
-              <Image source={{ uri: image }} style={styles.previewImage} />
-            ) : null}
+            <Text style={styles.modalHeaderTitle}>New Recipe</Text>
 
-            <Text style={styles.fieldLabel}>Ingredients (Use ":" for section headers)</Text>
-            <TextInput
-              style={[styles.input, styles.multiline]}
-              multiline
-              placeholder={`Salt\nGhee\n\nFor gravy:\n3 Tomatoes`}
-              placeholderTextColor="#999"
-              value={ingredients}
-              onChangeText={setIngredients}
-            />
+            <TouchableOpacity
+              style={styles.modalTouchArea}
+              onPress={handleCreateRecipe}
+              hitSlop={{ top: 20, bottom: 20, left: 20, right: 20 }}
+            >
+              <Text style={styles.modalSaveText}>Save</Text>
+            </TouchableOpacity>
+          </View>
 
-            <Text style={styles.fieldLabel}>Instructions (One step per line)</Text>
-            <TextInput
-              style={[styles.input, styles.multiline]}
-              multiline
-              placeholder={`1. Boil rice with spices.\n2. Layer gravy and rice.`}
-              placeholderTextColor="#999"
-              value={instructions}
-              onChangeText={setInstructions}
-            />
+          <KeyboardAvoidingView
+            behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+            style={{ flex: 1 }}
+          >
+            <ScrollView contentContainerStyle={{ padding: 16 }}>
+              <Text style={styles.label}>Title *</Text>
+              <TextInput
+                style={styles.input}
+                placeholder="e.g. Chicken Biryani"
+                placeholderTextColor="#94A3B8"
+                value={title}
+                onChangeText={setTitle}
+              />
 
-            <View style={styles.modalButtons}>
-              <TouchableOpacity style={[styles.btn, styles.cancelBtn]} onPress={() => setModalVisible(false)}>
-                <Text style={styles.btnText}>Cancel</Text>
+              <View style={{ flexDirection: 'row', gap: 10 }}>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.label}>Time</Text>
+                  <TextInput
+                    style={styles.input}
+                    placeholder="e.g. 45 mins"
+                    placeholderTextColor="#94A3B8"
+                    value={time}
+                    onChangeText={setTime}
+                  />
+                </View>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.label}>Difficulty</Text>
+                  <TextInput
+                    style={styles.input}
+                    placeholder="e.g. Medium"
+                    placeholderTextColor="#94A3B8"
+                    value={difficulty}
+                    onChangeText={setDifficulty}
+                  />
+                </View>
+              </View>
+
+              <Text style={styles.label}>Recipe Photo</Text>
+              <TouchableOpacity style={styles.photoBtn} onPress={pickImage}>
+                <Text style={styles.photoBtnText}>📷 Select Photo</Text>
               </TouchableOpacity>
-              <TouchableOpacity style={[styles.btn, styles.saveBtn]} onPress={handleSave}>
-                <Text style={[styles.btnText, { color: '#FFF' }]}>Save Recipe</Text>
+              {image ? <Image source={{ uri: image }} style={styles.previewImage} /> : null}
+
+              <Text style={styles.label}>Tags (comma separated)</Text>
+              <TextInput
+                style={styles.input}
+                placeholder="e.g. Dinner, Indian, Spicy"
+                placeholderTextColor="#94A3B8"
+                value={tagsStr}
+                onChangeText={setTagsStr}
+              />
+
+              <Text style={styles.label}>Ingredients (use "Header:" for subheadings)</Text>
+              <TextInput
+                style={[styles.input, styles.multiline]}
+                multiline
+                placeholder={`For gravy:\n0.5 Onions\n3 Tomatoes`}
+                placeholderTextColor="#94A3B8"
+                value={ingredientsText}
+                onChangeText={setIngredientsText}
+              />
+
+              <Text style={styles.label}>Instructions (use "Header:" for subheadings)</Text>
+              <TextInput
+                style={[styles.input, styles.multiline]}
+                multiline
+                placeholder={`Rice:\nWash the rice twice\nSoak for 30 mins`}
+                placeholderTextColor="#94A3B8"
+                value={instructionsText}
+                onChangeText={setInstructionsText}
+              />
+
+              <TouchableOpacity style={styles.createSubmitBtn} onPress={handleCreateRecipe}>
+                <Text style={styles.createSubmitBtnText}>Create Recipe</Text>
               </TouchableOpacity>
-            </View>
-          </ScrollView>
-        </SafeAreaView>
+            </ScrollView>
+          </KeyboardAvoidingView>
+        </View>
       </Modal>
     </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#F7F8FA' },
-  headerContainer: { paddingHorizontal: 20, paddingVertical: 16, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
-  headerTitle: { fontSize: 26, fontWeight: 'bold', color: '#1A1A1A' },
-  headerSubtitle: { fontSize: 14, color: '#666', marginTop: 2 },
-  addButton: { backgroundColor: '#007AFF', paddingHorizontal: 16, paddingVertical: 8, borderRadius: 20 },
-  addButtonText: { color: '#FFF', fontWeight: '600', fontSize: 14 },
-  listContent: { paddingHorizontal: 20, paddingBottom: 24 },
-  card: { backgroundColor: '#FFF', borderRadius: 16, marginBottom: 16, overflow: 'hidden', elevation: 3 },
-  cardImage: { width: '100%', height: 180 },
-  cardDetails: { padding: 16 },
-  cardTitle: { fontSize: 18, fontWeight: '600', color: '#1A1A1A' },
-  cardMeta: { fontSize: 14, color: '#666', marginTop: 6 },
-  modalContainer: { flex: 1, backgroundColor: '#FFF' },
-  modalContent: { padding: 20 },
-  modalTitle: { fontSize: 24, fontWeight: 'bold', marginBottom: 16, color: '#1A1A1A' },
-  fieldLabel: { fontSize: 14, fontWeight: '600', color: '#444', marginTop: 12, marginBottom: 6 },
-  input: { backgroundColor: '#F0F2F5', padding: 14, borderRadius: 10, fontSize: 15, color: '#1A1A1A' },
-  multiline: { height: 120, textAlignVertical: 'top' },
-  photoBtn: { backgroundColor: '#EBF5FF', padding: 14, borderRadius: 10, alignItems: 'center', borderStyle: 'dashed', borderWidth: 1, borderColor: '#007AFF' },
-  photoBtnText: { color: '#007AFF', fontWeight: '600', fontSize: 15 },
-  previewImage: { width: '100%', height: 140, borderRadius: 10, marginTop: 10 },
-  modalButtons: { flexDirection: 'row', gap: 12, marginTop: 24, marginBottom: 30 },
-  btn: { flex: 1, padding: 16, borderRadius: 10, alignItems: 'center' },
-  cancelBtn: { backgroundColor: '#E5E7EB' },
-  saveBtn: { backgroundColor: '#007AFF' },
-  btnText: { fontWeight: '600', fontSize: 16, color: '#333' },
+  container: { flex: 1, backgroundColor: '#F8FAFC' },
+  header: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingHorizontal: 16,
+    paddingTop: 12,
+    paddingBottom: 12,
+    minHeight: 56,
+  },
+  headerTitle: { fontSize: 28, fontWeight: '800', color: '#0F172A' },
+  addHeaderBtn: { backgroundColor: '#007AFF', paddingHorizontal: 16, paddingVertical: 10, borderRadius: 20 },
+  addHeaderBtnText: { color: '#FFF', fontWeight: '700', fontSize: 14 },
+
+  searchInput: { backgroundColor: '#FFF', marginHorizontal: 16, marginBottom: 12, marginTop: 4, padding: 12, borderRadius: 12, borderWidth: 1, borderColor: '#E2E8F0', fontSize: 15 },
+  tagChip: { backgroundColor: '#FFF', paddingHorizontal: 14, paddingVertical: 8, borderRadius: 20, marginRight: 8, borderWidth: 1, borderColor: '#CBD5E1', height: 36 },
+  activeTagChip: { backgroundColor: '#007AFF', borderColor: '#007AFF' },
+  tagChipText: { fontSize: 13, color: '#475569', fontWeight: '600' },
+  activeTagChipText: { color: '#FFF' },
+
+  card: { backgroundColor: '#FFF', borderRadius: 16, marginBottom: 16, overflow: 'hidden', borderWidth: 1, borderColor: '#E2E8F0' },
+  cardImage: { width: '100%', height: 160 },
+  favBadge: { position: 'absolute', top: 12, right: 12, backgroundColor: '#FFF', borderRadius: 20, padding: 6, borderWidth: 1, borderColor: '#F1F5F9' },
+  cardContent: { padding: 14 },
+  cardTitle: { fontSize: 18, fontWeight: '700', color: '#0F172A' },
+  cardMeta: { fontSize: 13, color: '#64748B', marginTop: 4 },
+  tagRow: { flexDirection: 'row', gap: 6, marginTop: 8, flexWrap: 'wrap' },
+  miniTag: { backgroundColor: '#F1F5F9', paddingHorizontal: 8, paddingVertical: 4, borderRadius: 6 },
+  miniTagText: { fontSize: 11, color: '#475569', fontWeight: '600' },
+
+  // Modal fixes for top notch overflow
+  modalWrapper: { flex: 1, backgroundColor: '#F8FAFC' },
+  modalHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingHorizontal: 16,
+    paddingTop: 8,
+    paddingBottom: 14,
+    backgroundColor: '#FFF',
+    borderBottomWidth: 1,
+    borderColor: '#E2E8F0',
+    minHeight: 56,
+  },
+  modalTouchArea: {
+    paddingVertical: 6,
+    paddingHorizontal: 8,
+  },
+  modalHeaderTitle: { fontSize: 17, fontWeight: '700', color: '#0F172A' },
+  modalCancelText: { color: '#64748B', fontSize: 16, fontWeight: '600' },
+  modalSaveText: { color: '#007AFF', fontSize: 16, fontWeight: '700' },
+
+  label: { fontSize: 13, fontWeight: '600', color: '#475569', marginTop: 12, marginBottom: 4 },
+  input: { backgroundColor: '#FFF', padding: 12, borderRadius: 8, fontSize: 15, color: '#0F172A', borderWidth: 1, borderColor: '#E2E8F0' },
+  multiline: { height: 110, textAlignVertical: 'top' },
+
+  photoBtn: { backgroundColor: '#EBF5FF', padding: 12, borderRadius: 8, alignItems: 'center', borderStyle: 'dashed', borderWidth: 1, borderColor: '#007AFF', marginVertical: 4 },
+  photoBtnText: { color: '#007AFF', fontWeight: '600', fontSize: 14 },
+  previewImage: { width: '100%', height: 120, borderRadius: 8, marginTop: 8 },
+
+  createSubmitBtn: { backgroundColor: '#007AFF', padding: 14, borderRadius: 10, alignItems: 'center', marginTop: 20, marginBottom: 30 },
+  createSubmitBtnText: { color: '#FFF', fontWeight: '700', fontSize: 16 },
 });
