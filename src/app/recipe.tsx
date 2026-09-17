@@ -1,6 +1,6 @@
 import * as ImagePicker from 'expo-image-picker';
 import { router, useLocalSearchParams } from 'expo-router';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import {
     Alert,
     Image,
@@ -27,11 +27,23 @@ export default function RecipeDetailScreen() {
   const [time, setTime] = useState(recipe?.time || '');
   const [difficulty, setDifficulty] = useState(recipe?.difficulty || '');
   const [image, setImage] = useState(recipe?.image || '');
-  const [ingredients, setIngredients] = useState(recipe?.ingredients.join('\n') || '');
-  const [instructions, setInstructions] = useState(recipe?.instructions.join('\n') || '');
+  const [ingredients, setIngredients] = useState(recipe?.ingredients?.join('\n') || '');
+  const [instructions, setInstructions] = useState(recipe?.instructions?.join('\n') || '');
 
   const [activeInput, setActiveInput] = useState<'ingredients' | 'instructions' | null>(null);
   const [selection, setSelection] = useState({ start: 0, end: 0 });
+
+  // Keep state updated whenever recipe data updates
+  useEffect(() => {
+    if (recipe) {
+      setTitle(recipe.title || '');
+      setTime(recipe.time || '');
+      setDifficulty(recipe.difficulty || '');
+      setImage(recipe.image || '');
+      setIngredients(recipe.ingredients ? recipe.ingredients.join('\n') : '');
+      setInstructions(recipe.instructions ? recipe.instructions.join('\n') : '');
+    }
+  }, [recipe?.id, recipe?.title, recipe?.image, recipe?.time, recipe?.difficulty]);
 
   if (!recipe) {
     return (
@@ -53,22 +65,16 @@ export default function RecipeDetailScreen() {
       mediaTypes: ImagePicker.MediaTypeOptions.Images,
       allowsEditing: true,
       aspect: [4, 3],
-      quality: 0.3,
-      base64: true,
+      quality: 0.6,
     });
 
     if (!result.canceled && result.assets[0]) {
-      const asset = result.assets[0];
-      if (asset.base64) {
-        setImage(`data:image/jpeg;base64,${asset.base64}`);
-      } else {
-        setImage(asset.uri);
-      }
+      setImage(result.assets[0].uri);
     }
   };
 
-  const handleSave = () => {
-    updateRecipe({
+  const handleSave = async () => {
+    await updateRecipe({
       ...recipe,
       title: title.trim() || recipe.title,
       time: time.trim() || recipe.time,
@@ -81,8 +87,8 @@ export default function RecipeDetailScreen() {
   };
 
   const handleDelete = () => {
-    const confirmAndExecute = () => {
-      deleteRecipe(recipe.id);
+    const confirmAndExecute = async () => {
+      await deleteRecipe(recipe.id);
       router.back();
     };
 
@@ -321,8 +327,7 @@ export default function RecipeDetailScreen() {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#F8FAFC' },
-  
-  /* Fixed Navigation Bar */
+
   navBar: {
     flexDirection: 'row',
     justifyContent: 'space-between',
