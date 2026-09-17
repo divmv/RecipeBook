@@ -53,22 +53,23 @@ export const RecipeProvider: React.FC<{ children: React.ReactNode }> = ({ childr
 
   // 2. Add recipe to Supabase & update local state
   const addRecipe = async (newRecipeData: Omit<Recipe, 'id'>) => {
-    const newRecipe: Recipe = { id: Date.now().toString(), ...newRecipeData };
+  const newRecipe: Recipe = { id: Date.now().toString(), ...newRecipeData };
 
-    // Update screen state immediately so UI/modal closes instantly
-    setRecipes((prev) => [newRecipe, ...prev]);
+  // Add to screen state immediately
+  setRecipes((prev) => [newRecipe, ...prev]);
 
-    try {
-      const { error } = await supabase.from('recipes').insert([newRecipe]);
-      if (error) {
-        console.error('Supabase add error:', error.message);
-        // Rollback state if server save fails
-        setRecipes((prev) => prev.filter((r) => r.id !== newRecipe.id));
-      }
-    } catch (e) {
-      console.error('Unexpected error adding recipe:', e);
+  try {
+    const { error } = await supabase.from('recipes').insert([newRecipe]);
+    if (error) {
+      console.error('Supabase insert error:', error.message);
+      alert(`Save Failed: ${error.message}`); // Shows the exact issue on screen
+      setRecipes((prev) => prev.filter((r) => r.id !== newRecipe.id)); // Rollback
     }
-  };
+  } catch (e: any) {
+    console.error('Unexpected error adding recipe:', e);
+    alert(`Unexpected Error: ${e.message}`);
+  }
+};
 
   // 3. Update recipe in Supabase & update local state
   const updateRecipe = async (updated: Recipe) => {
