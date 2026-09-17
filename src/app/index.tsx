@@ -20,7 +20,6 @@ import { useRecipes } from '../context/RecipeContext';
 export default function HomeScreen() {
   const insets = useSafeAreaInsets();
   const { recipes, addRecipe, toggleFavorite } = useRecipes();
-  const [search, setSearch] = useState('');
   const [selectedTag, setSelectedTag] = useState('All');
 
   // Add Recipe Modal state
@@ -40,13 +39,9 @@ export default function HomeScreen() {
   const tagOptions = ['All', 'Favorites', ...userTags];
 
   const filteredRecipes = recipes.filter((r) => {
-    const matchesSearch =
-      r.title.toLowerCase().includes(search.toLowerCase()) ||
-      r.ingredients.some((i) => i.toLowerCase().includes(search.toLowerCase()));
-
-    if (selectedTag === 'Favorites') return matchesSearch && r.isFavorite;
-    if (selectedTag !== 'All') return matchesSearch && r.tags?.includes(selectedTag);
-    return matchesSearch;
+    if (selectedTag === 'Favorites') return r.isFavorite;
+    if (selectedTag !== 'All') return r.tags?.includes(selectedTag);
+    return true;
   });
 
   const pickImage = async () => {
@@ -110,17 +105,8 @@ export default function HomeScreen() {
         </TouchableOpacity>
       </View>
 
-      {/* Search Bar */}
-      <TextInput
-        style={styles.searchInput}
-        placeholder="Search title or ingredients..."
-        placeholderTextColor="#94A3B8"
-        value={search}
-        onChangeText={setSearch}
-      />
-
       {/* Tag Filters */}
-      <View style={{ height: 44, marginBottom: 8 }}>
+      <View style={{ height: 44, marginBottom: 8, marginTop: 4 }}>
         <FlatList
           horizontal
           data={tagOptions}
@@ -300,7 +286,6 @@ const styles = StyleSheet.create({
   addHeaderBtn: { backgroundColor: '#007AFF', paddingHorizontal: 16, paddingVertical: 10, borderRadius: 20 },
   addHeaderBtnText: { color: '#FFF', fontWeight: '700', fontSize: 14 },
 
-  searchInput: { backgroundColor: '#FFF', marginHorizontal: 16, marginBottom: 12, marginTop: 4, padding: 12, borderRadius: 12, borderWidth: 1, borderColor: '#E2E8F0', fontSize: 15 },
   tagChip: { backgroundColor: '#FFF', paddingHorizontal: 14, paddingVertical: 8, borderRadius: 20, marginRight: 8, borderWidth: 1, borderColor: '#CBD5E1', height: 36 },
   activeTagChip: { backgroundColor: '#007AFF', borderColor: '#007AFF' },
   tagChipText: { fontSize: 13, color: '#475569', fontWeight: '600' },
@@ -316,7 +301,6 @@ const styles = StyleSheet.create({
   miniTag: { backgroundColor: '#F1F5F9', paddingHorizontal: 8, paddingVertical: 4, borderRadius: 6 },
   miniTagText: { fontSize: 11, color: '#475569', fontWeight: '600' },
 
-  // Modal fixes for top notch overflow
   modalWrapper: { flex: 1, backgroundColor: '#F8FAFC' },
   modalHeader: {
     flexDirection: 'row',
