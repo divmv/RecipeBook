@@ -32,7 +32,6 @@ export default function RecipeDetailScreen() {
   const [ingredientsText, setIngredientsText] = useState('');
   const [instructionsText, setInstructionsText] = useState('');
 
-  // Interactive Checklist states
   const [checkedIngredients, setCheckedIngredients] = useState<Record<number, boolean>>({});
   const [checkedInstructions, setCheckedInstructions] = useState<Record<number, boolean>>({});
 
@@ -58,22 +57,6 @@ export default function RecipeDetailScreen() {
     );
   }
 
-  const convertUriToBase64 = async (uri: string): Promise<string> => {
-    if (uri.startsWith('data:') || uri.startsWith('http')) return uri;
-    try {
-      const response = await fetch(uri);
-      const blob = await response.blob();
-      return new Promise((resolve) => {
-        const reader = new FileReader();
-        reader.onloadend = () => resolve(reader.result as string);
-        reader.onerror = () => resolve(uri);
-        reader.readAsDataURL(blob);
-      });
-    } catch {
-      return uri;
-    }
-  };
-
   const pickImage = async () => {
     const result = await ImagePicker.launchImageLibraryAsync({
       mediaTypes: ['images'],
@@ -85,50 +68,55 @@ export default function RecipeDetailScreen() {
 
     if (!result.canceled && result.assets[0]) {
       const asset = result.assets[0];
-      if (asset.base64) {
-        setImage(`data:image/jpeg;base64,${asset.base64}`);
-      } else {
-        const persistentDataUrl = await convertUriToBase64(asset.uri);
-        setImage(persistentDataUrl);
-      }
+      setImage(asset.base64 ? `data:image/jpeg;base64,${asset.base64}` : asset.uri);
     }
   };
 
   const handleSave = async () => {
-    await updateRecipe({
-      ...recipe,
-      title: title.trim() || recipe.title,
-      time: time.trim() || recipe.time,
-      difficulty: difficulty.trim() || recipe.difficulty,
-      tags: tagsStr.split(',').map((t) => t.trim()).filter(Boolean),
-      image: image.trim() || recipe.image,
-      ingredients: ingredientsText.split('\n').filter((l) => l.trim() !== ''),
-      instructions: instructionsText.split('\n').filter((l) => l.trim() !== ''),
-    });
-    setIsEditing(false);
+    try {
+      await updateRecipe({
+        ...recipe,
+        title: title.trim() || recipe.title,
+        time: time.trim() || recipe.time,
+        difficulty: difficulty.trim() || recipe.difficulty,
+        tags: tagsStr.split(',').map((t) => t.trim()).filter(Boolean),
+        image: image.trim() || recipe.image,
+        ingredients: ingredientsText.split('\n').filter((l) => l.trim() !== ''),
+        instructions: instructionsText.split('\n').filter((l) => l.trim() !== ''),
+      });
+    } catch (e) {
+      console.error('Error saving edits:', e);
+    } finally {
+      setIsEditing(false);
+    }
   };
 
   const handleDelete = () => {
-    const confirmAndExecute = async () => {
-      await deleteRecipe(recipe.id);
-      router.back();
+    const executeDelete = async () => {
+      try {
+        await deleteRecipe(recipe.id);
+      } catch (e) {
+        console.error('Error deleting recipe:', e);
+      } finally {
+        router.back();
+      }
     };
 
     if (Platform.OS === 'web') {
       if (window.confirm('Are you sure you want to delete this recipe?')) {
-        confirmAndExecute();
+        executeDelete();
       }
     } else {
       Alert.alert('Delete Recipe', 'Are you sure you want to delete this recipe?', [
         { text: 'Cancel', style: 'cancel' },
-        { text: 'Delete', style: 'destructive', onPress: confirmAndExecute },
+        { text: 'Delete', style: 'destructive', onPress: executeDelete },
       ]);
     }
   };
 
   return (
     <SafeAreaView style={styles.container} edges={['top', 'left', 'right']}>
-      {/* Top Bar with Clear Padding and Touch Targets */}
+      {/* Navigation Header */}
       <View style={styles.navBar}>
         {!isEditing ? (
           <TouchableOpacity
@@ -209,12 +197,11 @@ export default function RecipeDetailScreen() {
             </View>
           ) : (
             <View>
-              {/* Recipe Hero Card */}
+              {/* Card Hero */}
               <View style={styles.card}>
                 <Image source={{ uri: recipe.image }} style={styles.heroImage} />
                 <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
                   <Text style={styles.mainTitle}>{recipe.title}</Text>
-                  
                   <TouchableOpacity
                     onPress={() => toggleFavorite(recipe.id)}
                     hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
@@ -233,12 +220,11 @@ export default function RecipeDetailScreen() {
                 </TouchableOpacity>
               </View>
 
-              {/* Ingredients Section */}
+              {/* Ingredients */}
               <View style={styles.card}>
                 <Text style={styles.sectionHeader}>Ingredients</Text>
                 {recipe.ingredients.map((item, index) => {
-                  const isSubheader = item.trim().endsWith(':');
-                  if (isSubheader) {
+                  if (item.trim().endsWith(':')) {
                     return (
                       <Text key={index} style={styles.subheading}>
                         {item}
@@ -264,12 +250,11 @@ export default function RecipeDetailScreen() {
                 })}
               </View>
 
-              {/* Instructions Section */}
+              {/* Instructions */}
               <View style={styles.card}>
                 <Text style={styles.sectionHeader}>Instructions</Text>
                 {recipe.instructions.map((step, index) => {
-                  const isSubheader = step.trim().endsWith(':');
-                  if (isSubheader) {
+                  if (step.trim().endsWith(':')) {
                     return (
                       <Text key={index} style={styles.subheading}>
                         {step}
@@ -345,15 +330,8 @@ const styles = StyleSheet.create({
     marginRight: 10,
     marginTop: 2,
   },
-  checkboxChecked: {
-    backgroundColor: '#007AFF',
-    borderColor: '#007AFF',
-  },
-  checkmark: {
-    color: '#FFF',
-    fontSize: 11,
-    fontWeight: 'bold',
-  },
+  checkboxChecked: { backgroundColor: '#007AFF', borderColor: '#007AFF' },
+  checkmark: { color: '#FFF', fontSize: 11, fontWeight: 'bold' },
 
   checkText: { fontSize: 15, color: '#334155', flex: 1, lineHeight: 22 },
   strikeText: { textDecorationLine: 'line-through', color: '#94A3B8' },

@@ -22,7 +22,7 @@ export default function HomeScreen() {
   const { recipes, addRecipe, toggleFavorite } = useRecipes();
   const [selectedTag, setSelectedTag] = useState('All');
 
-  // Add Recipe Modal state
+  // Modal State
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
   const [title, setTitle] = useState('');
   const [time, setTime] = useState('');
@@ -32,14 +32,11 @@ export default function HomeScreen() {
   const [ingredientsText, setIngredientsText] = useState('');
   const [instructionsText, setInstructionsText] = useState('');
 
-  // Dynamically generate filter tags strictly from user recipes
-  const userTags = Array.from(
-    new Set(recipes.flatMap((r) => r.tags || []))
-  ).sort();
-  const tagOptions = ['All', 'Favorites', ...userTags];
+  const userTags = Array.from(new Set(recipes.flatMap((r) => r.tags || []))).sort();
+  const tagOptions = ['All', '❤️ Favorites', ...userTags];
 
   const filteredRecipes = recipes.filter((r) => {
-    if (selectedTag === 'Favorites') return r.isFavorite;
+    if (selectedTag === '❤️ Favorites') return r.isFavorite;
     if (selectedTag !== 'All') return r.tags?.includes(selectedTag);
     return true;
   });
@@ -55,11 +52,7 @@ export default function HomeScreen() {
 
     if (!result.canceled && result.assets[0]) {
       const asset = result.assets[0];
-      if (asset.base64) {
-        setImage(`data:image/jpeg;base64,${asset.base64}`);
-      } else {
-        setImage(asset.uri);
-      }
+      setImage(asset.base64 ? `data:image/jpeg;base64,${asset.base64}` : asset.uri);
     }
   };
 
@@ -69,31 +62,35 @@ export default function HomeScreen() {
       return;
     }
 
-    await addRecipe({
-      title: title.trim(),
-      time: time.trim() || '30 mins',
-      difficulty: difficulty.trim() || 'Easy',
-      tags: tagsStr.split(',').map((t) => t.trim()).filter(Boolean),
-      isFavorite: false,
-      image: image.trim() || 'https://images.unsplash.com/photo-1495521821757-a1efb6729352?w=800',
-      ingredients: ingredientsText.split('\n').filter((l) => l.trim() !== ''),
-      instructions: instructionsText.split('\n').filter((l) => l.trim() !== ''),
-    });
-
-    // Reset fields
-    setTitle('');
-    setTime('');
-    setDifficulty('');
-    setTagsStr('');
-    setImage('');
-    setIngredientsText('');
-    setInstructionsText('');
-    setIsAddModalOpen(false);
+    try {
+      await addRecipe({
+        title: title.trim(),
+        time: time.trim() || '30 mins',
+        difficulty: difficulty.trim() || 'Easy',
+        tags: tagsStr.split(',').map((t) => t.trim()).filter(Boolean),
+        isFavorite: false,
+        image: image.trim() || 'https://images.unsplash.com/photo-1495521821757-a1efb6729352?w=800',
+        ingredients: ingredientsText.split('\n').filter((l) => l.trim() !== ''),
+        instructions: instructionsText.split('\n').filter((l) => l.trim() !== ''),
+      });
+    } catch (e) {
+      console.error('Error adding recipe:', e);
+    } finally {
+      // Guaranteed execution to exit the modal cleanly
+      setTitle('');
+      setTime('');
+      setDifficulty('');
+      setTagsStr('');
+      setImage('');
+      setIngredientsText('');
+      setInstructionsText('');
+      setIsAddModalOpen(false);
+    }
   };
 
   return (
     <SafeAreaView style={styles.container} edges={['top', 'left', 'right']}>
-      {/* Top Main Bar */}
+      {/* Header */}
       <View style={styles.header}>
         <Text style={styles.headerTitle}>My Recipes</Text>
         <TouchableOpacity
@@ -126,7 +123,7 @@ export default function HomeScreen() {
         />
       </View>
 
-      {/* Main Recipe List */}
+      {/* Recipe List */}
       <FlatList
         data={filteredRecipes}
         keyExtractor={(item) => item.id}
@@ -165,7 +162,7 @@ export default function HomeScreen() {
         )}
       />
 
-      {/* Safe Area Corrected New Recipe Modal */}
+      {/* New Recipe Modal */}
       <Modal visible={isAddModalOpen} animationType="slide" transparent={false}>
         <View style={[styles.modalWrapper, { paddingTop: Math.max(insets.top, 24) }]}>
           <View style={styles.modalHeader}>
@@ -314,10 +311,7 @@ const styles = StyleSheet.create({
     borderColor: '#E2E8F0',
     minHeight: 56,
   },
-  modalTouchArea: {
-    paddingVertical: 6,
-    paddingHorizontal: 8,
-  },
+  modalTouchArea: { paddingVertical: 6, paddingHorizontal: 8 },
   modalHeaderTitle: { fontSize: 17, fontWeight: '700', color: '#0F172A' },
   modalCancelText: { color: '#64748B', fontSize: 16, fontWeight: '600' },
   modalSaveText: { color: '#007AFF', fontSize: 16, fontWeight: '700' },
