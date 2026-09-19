@@ -3,7 +3,7 @@ import * as Sharing from 'expo-sharing';
 import { Platform } from 'react-native';
 import { Recipe } from '../context/RecipeContext';
 
-export const exportRecipePDF = async (recipe: Recipe) => {
+const buildHtml = (recipe: Recipe) => {
   const ingredientsHtml = recipe.ingredients
     .map((item) =>
       item.trim().endsWith(':')
@@ -20,7 +20,7 @@ export const exportRecipePDF = async (recipe: Recipe) => {
     )
     .join('');
 
-  const htmlContent = `
+  return `
     <!DOCTYPE html>
     <html>
       <head>
@@ -28,7 +28,7 @@ export const exportRecipePDF = async (recipe: Recipe) => {
         <title>${recipe.title}</title>
         <style>
           body {
-            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
             padding: 30px;
             color: #0F172A;
             max-width: 800px;
@@ -39,65 +39,69 @@ export const exportRecipePDF = async (recipe: Recipe) => {
           .hero-img { width: 100%; max-height: 300px; object-fit: cover; border-radius: 12px; margin-bottom: 20px; }
           h2 { font-size: 20px; border-bottom: 2px solid #E2E8F0; padding-bottom: 6px; margin-top: 24px; color: #0F172A; }
           ul, ol { padding-left: 20px; line-height: 1.5; }
-          @media print {
-            body { padding: 0; }
-          }
         </style>
       </head>
       <body>
         <h1>${recipe.title}</h1>
         <div class="meta">⏱️ Time: ${recipe.time} | 🍳 Difficulty: ${recipe.difficulty}</div>
-        
         ${recipe.image ? `<img src="${recipe.image}" class="hero-img" />` : ''}
-
         <h2>Ingredients</h2>
         <ul>${ingredientsHtml}</ul>
-
         <h2>Instructions</h2>
         <ol>${instructionsHtml}</ol>
       </body>
     </html>
   `;
+};
 
-  try {
-    if (Platform.OS === 'web') {
-      // Browser-native popup print window for Vercel / Web
-      const printWindow = window.open('', '_blank');
-      
-      if (!printWindow) {
-        alert('Please allow popups in your browser to print/export PDFs.');
+export const exportRecipePDF = async (recipe: Recipe) => {
+  // 1. Web Deployment (Vercel)
+  if (Platform.OS === 'web') {
+    const formattedText = 
+      `🍳 ${recipe.title}\n⏱️ ${recipe.time} | 🍳 ${recipe.difficulty}\n\n` +
+      `📖 INGREDIENTS:\n${recipe.ingredients.map((i) => `• ${i}`).join('\n')}\n\n` +
+      `📝 INSTRUCTIONS:\n${recipe.instructions.map((step, idx) => `${idx + 1}.${step}`).join('\n')}`;
+
+    // Try Web Share API first (Opens native WhatsApp, iMessage, Mail sheet on web)
+    if (navigator.share) {
+      try {
+        await navigator.share({
+          title: recipe.title,
+          text: formattedText,
+        });
         return;
-      }
-
-      printWindow.document.write(htmlContent);
-      printWindow.document.close();
-
-      // Trigger print after resources load
-      printWindow.onload = () => {
-        printWindow.focus();
-        printWindow.print();
-      };
-
-      // Fallback trigger if onload does not fire immediately
-      setTimeout(() => {
-        try {
-          printWindow.focus();
-          printWindow.print();
-        } catch (e) {
-          // Ignore if window was already closed
-        }
-      }, 500);
-    } else {
-      // Native iOS / Android PDF generation & share sheet
-      const { uri } = await Print.printToFileAsync({ html: htmlContent });
-      if (await Sharing.isAvailableAsync()) {
-        await Sharing.shareAsync(uri);
-      } else {
-        await Print.printAsync({ uri });
+      } catch (e) {
+        // User closed share menu or browser blocked share; fallback to printable view
       }
     }
+
+    // Fallback: Open formatted print/PDF document
+    const printWindow = window.open('', '_blank');
+    if (!printWindow) {
+      alert('Please allow popups in your browser to view/print the card.');
+      return;
+    }
+
+    printWindow.document.write(buildHtml(recipe));
+    printWindow.document.close();
+    printWindow.onload = () => {
+      printWindow.focus();
+      printWindow.print();
+    };
+    return;
+  }
+
+  // 2. Native Apps (iOS / Android File Share Sheet)
+  try {
+    const htmlContent = buildHtml(recipe);
+    const { uri } = await Print.printToFileAsync({ html: htmlContent });
+    if (await Sharing.isAvailableAsync()) {
+      await Sharing.shareAsync(uri);
+    } else {
+      await Print.printAsync({ uri });
+    }
   } catch (error) {
-    console.error('Failed to export PDF:', error);
-    alert('Could not generate PDF card.');
+    console.error('Failed to share recipe:', error);
+    alert('Could not open share menu.');
   }
 };
