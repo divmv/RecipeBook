@@ -4,20 +4,18 @@ import { Platform } from 'react-native';
 import { Recipe } from '../context/RecipeContext';
 
 export const exportRecipePDF = async (recipe: Recipe) => {
-  // Format ingredients (support trailing colon subheadings)
   const ingredientsHtml = recipe.ingredients
     .map((item) =>
       item.trim().endsWith(':')
-        ? `<h4 style="margin-top: 14px; margin-bottom: 4px; color: #0F172A; list-style-type: none; font-size: 16px;">${item}</h4>`
+        ? `<h4 style="margin-top: 14px; margin-bottom: 4px; color: #0F172A; font-size: 16px;">${item}</h4>`
         : `<li style="margin-bottom: 6px; font-size: 14px; color: #334155;">${item}</li>`
     )
     .join('');
 
-  // Format instructions (support trailing colon subheadings)
   const instructionsHtml = recipe.instructions
     .map((step) =>
       step.trim().endsWith(':')
-        ? `<h4 style="margin-top: 14px; margin-bottom: 4px; color: #0F172A; list-style-type: none; font-size: 16px;">${step}</h4>`
+        ? `<h4 style="margin-top: 14px; margin-bottom: 4px; color: #0F172A; font-size: 16px;">${step}</h4>`
         : `<li style="margin-bottom: 8px; font-size: 14px; color: #334155;">${step}</li>`
     )
     .join('');
@@ -41,6 +39,9 @@ export const exportRecipePDF = async (recipe: Recipe) => {
           .hero-img { width: 100%; max-height: 300px; object-fit: cover; border-radius: 12px; margin-bottom: 20px; }
           h2 { font-size: 20px; border-bottom: 2px solid #E2E8F0; padding-bottom: 6px; margin-top: 24px; color: #0F172A; }
           ul, ol { padding-left: 20px; line-height: 1.5; }
+          @media print {
+            body { padding: 0; }
+          }
         </style>
       </head>
       <body>
@@ -60,10 +61,34 @@ export const exportRecipePDF = async (recipe: Recipe) => {
 
   try {
     if (Platform.OS === 'web') {
-      // Direct browser print preview on Vercel
-      await Print.printAsync({ html: htmlContent });
+      // Browser-native popup print window for Vercel / Web
+      const printWindow = window.open('', '_blank');
+      
+      if (!printWindow) {
+        alert('Please allow popups in your browser to print/export PDFs.');
+        return;
+      }
+
+      printWindow.document.write(htmlContent);
+      printWindow.document.close();
+
+      // Trigger print after resources load
+      printWindow.onload = () => {
+        printWindow.focus();
+        printWindow.print();
+      };
+
+      // Fallback trigger if onload does not fire immediately
+      setTimeout(() => {
+        try {
+          printWindow.focus();
+          printWindow.print();
+        } catch (e) {
+          // Ignore if window was already closed
+        }
+      }, 500);
     } else {
-      // Native iOS / Android file generation & share dialog
+      // Native iOS / Android PDF generation & share sheet
       const { uri } = await Print.printToFileAsync({ html: htmlContent });
       if (await Sharing.isAvailableAsync()) {
         await Sharing.shareAsync(uri);
@@ -73,6 +98,6 @@ export const exportRecipePDF = async (recipe: Recipe) => {
     }
   } catch (error) {
     console.error('Failed to export PDF:', error);
-    alert('Could not generate PDF. Please check browser print permissions.');
+    alert('Could not generate PDF card.');
   }
 };
